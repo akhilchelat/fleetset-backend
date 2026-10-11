@@ -5,7 +5,7 @@ from passlib.context import CryptContext
 
 SECRET_KEY = "CHANGE_THIS_TO_A_STRONG_SECRET_KEY"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = 720
 
 
 pwd_context = CryptContext(

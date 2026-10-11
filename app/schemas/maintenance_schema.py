@@ -30,33 +30,30 @@ MaintenanceTypeValue = Literal[
 
 
 class MaintenanceCreate(BaseModel):
-
     vehicle_id: UUID
-
-    recorded_by: UUID
 
     maintenance_type: MaintenanceTypeValue = "general_service"
 
     description: str | None = Field(
         default=None,
-        max_length=1000
+        max_length=1000,
     )
 
     garage_name: str | None = Field(
         default=None,
-        max_length=150
+        max_length=150,
     )
 
     invoice_number: str | None = Field(
         default=None,
-        max_length=100
+        max_length=100,
     )
 
     cost: Decimal = Field(
         ...,
         gt=0,
         decimal_places=2,
-        max_digits=12
+        max_digits=12,
     )
 
     service_date: date
@@ -65,39 +62,38 @@ class MaintenanceCreate(BaseModel):
 
     odometer_reading: int | None = Field(
         default=None,
-        ge=0
+        ge=0,
     )
 
     remarks: str | None = Field(
         default=None,
-        max_length=1000
+        max_length=1000,
     )
 
 
 class MaintenanceUpdate(BaseModel):
-
     maintenance_type: MaintenanceTypeValue | None = None
 
     description: str | None = Field(
         default=None,
-        max_length=1000
+        max_length=1000,
     )
 
     garage_name: str | None = Field(
         default=None,
-        max_length=150
+        max_length=150,
     )
 
     invoice_number: str | None = Field(
         default=None,
-        max_length=100
+        max_length=100,
     )
 
     cost: Decimal | None = Field(
         default=None,
         gt=0,
         decimal_places=2,
-        max_digits=12
+        max_digits=12,
     )
 
     service_date: date | None = None
@@ -106,20 +102,20 @@ class MaintenanceUpdate(BaseModel):
 
     odometer_reading: int | None = Field(
         default=None,
-        ge=0
+        ge=0,
     )
 
     remarks: str | None = Field(
         default=None,
-        max_length=1000
+        max_length=1000,
     )
 
 
 class MaintenanceResponse(BaseModel):
-
     id: UUID
 
     company_id: UUID
+    branch_id: UUID
     vehicle_id: UUID
     recorded_by: UUID
 
@@ -144,44 +140,30 @@ class MaintenanceResponse(BaseModel):
     is_active: bool
 
     created_at: datetime
-
     updated_at: datetime
 
     model_config = ConfigDict(
-        from_attributes=True
+        from_attributes=True,
     )
 
 
 class MaintenanceCostResponse(BaseModel):
-
     total_cost: Decimal
 
 
-
 class MaintenanceDateRangeCostResponse(BaseModel):
-
     start_date: date
-
     end_date: date
-
     total_cost: Decimal
 
 
 class MaintenanceDailyCostResponse(BaseModel):
-
     date: date
-
     total_cost: Decimal
-
 
 
 class MaintenanceVehicleCostResponse(BaseModel):
-
     vehicle_id: UUID
-
     start_date: date
-
     end_date: date
-
     total_cost: Decimal
-

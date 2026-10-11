@@ -1,14 +1,22 @@
 from datetime import date
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+
 from app.db.session import get_db
+from app.security.authorization import (
+    get_current_user,
+    require_roles,
+)
+
 from app.schemas.trip_schema import (
     TripCreate,
     TripUpdate,
     TripResponse,
     TripListResponse,
 )
+
 from app.services.trip_service import (
     create_trip,
     get_trip,
@@ -17,8 +25,6 @@ from app.services.trip_service import (
     get_driver_trips,
     get_trips_by_status,
     get_trips_by_date_range,
-    get_vehicle_trips_by_date_range,
-    get_driver_trips_by_date_range,
     update_trip,
     start_trip,
     complete_trip,
@@ -33,372 +39,472 @@ router = APIRouter(
 )
 
 
+MANAGEMENT_ROLES = [
+    "GLOBAL_ADMIN",
+    "SUPER_ADMIN",
+    "BRANCH_ADMIN",
+]
+
+OPERATIONAL_ROLES = [
+    "GLOBAL_ADMIN",
+    "SUPER_ADMIN",
+    "BRANCH_ADMIN",
+    "DRIVER",
+]
+
+
+def _get_company_id(
+    current_user,
+    company_id: UUID | None = None,
+) -> UUID:
+    user_company_id = getattr(
+        current_user,
+        "company_id",
+        None,
+    )
+
+    if user_company_id is not None:
+        if (
+            company_id is not None
+            and company_id != user_company_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this company",
+            )
+
+        return user_company_id
+
+    if company_id is not None:
+        return company_id
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="company_id is required for this user",
+    )
+
+
+def _handle_service_result(result):
+    if not isinstance(result, dict):
+        return result
+
+    if result.get("success") is False:
+        raise HTTPException(
+            status_code=result.get(
+                "status_code",
+                status.HTTP_400_BAD_REQUEST,
+            ),
+            detail=result.get(
+                "message",
+                "Trip operation failed",
+            ),
+        )
+
+    return result.get("data")
+
+
 @router.post(
-    "/{company_id}",
+    "/",
     response_model=TripResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[
+        Depends(
+            require_roles(
+                *MANAGEMENT_ROLES
+            )
+        )
+    ],
 )
 def create_trip_route(
-    company_id: UUID,
-    trip: TripCreate,
+    trip_data: TripCreate,
+    company_id: UUID | None = Query(
+        default=None
+    ),
     db: Session = Depends(get_db),
+    current_user=Depends(
+        get_current_user
+    ),
 ):
+    resolved_company_id = _get_company_id(
+        current_user=current_user,
+        company_id=company_id,
+    )
+
     result = create_trip(
         db=db,
-        company_id=company_id,
-        vehicle_id=trip.vehicle_id,
-        driver_id=trip.driver_id,
-        created_by=trip.created_by,
-        origin=trip.origin,
-        destination=trip.destination,
-        cargo_description=trip.cargo_description,
-        remarks=trip.remarks,
+        current_user=current_user,
+        company_id=resolved_company_id,
+        vehicle_id=trip_data.vehicle_id,
+        driver_id=trip_data.driver_id,
+        origin=trip_data.origin,
+        destination=trip_data.destination,
+        cargo_description=trip_data.cargo_description,
+        remarks=trip_data.remarks,
     )
 
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return result["data"]
+    return _handle_service_result(result)
 
 
 @router.get(
-    "/{company_id}/all",
+    "/company",
     response_model=list[TripListResponse],
-    status_code=status.HTTP_200_OK,
 )
 def get_company_trips_route(
-    company_id: UUID,
+    company_id: UUID | None = Query(
+        default=None
+    ),
     db: Session = Depends(get_db),
+    current_user=Depends(
+        get_current_user
+    ),
 ):
+    resolved_company_id = _get_company_id(
+        current_user=current_user,
+        company_id=company_id,
+    )
+
     result = get_company_trips(
         db=db,
-        company_id=company_id,
+        current_user=current_user,
+        company_id=resolved_company_id,
     )
 
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return result["data"]
+    return _handle_service_result(result)
 
 
 @router.get(
-    "/{company_id}/vehicle/{vehicle_id}",
+    "/vehicle/{vehicle_id}",
     response_model=list[TripListResponse],
-    status_code=status.HTTP_200_OK,
 )
 def get_vehicle_trips_route(
-    company_id: UUID,
     vehicle_id: UUID,
+    company_id: UUID | None = Query(
+        default=None
+    ),
     db: Session = Depends(get_db),
+    current_user=Depends(
+        get_current_user
+    ),
 ):
+    resolved_company_id = _get_company_id(
+        current_user=current_user,
+        company_id=company_id,
+    )
+
     result = get_vehicle_trips(
         db=db,
-        company_id=company_id,
+        current_user=current_user,
+        company_id=resolved_company_id,
         vehicle_id=vehicle_id,
     )
 
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return result["data"]
+    return _handle_service_result(result)
 
 
 @router.get(
-    "/{company_id}/driver/{driver_id}",
+    "/driver/{driver_id}",
     response_model=list[TripListResponse],
-    status_code=status.HTTP_200_OK,
 )
 def get_driver_trips_route(
-    company_id: UUID,
     driver_id: UUID,
+    company_id: UUID | None = Query(
+        default=None
+    ),
     db: Session = Depends(get_db),
+    current_user=Depends(
+        get_current_user
+    ),
 ):
+    resolved_company_id = _get_company_id(
+        current_user=current_user,
+        company_id=company_id,
+    )
+
     result = get_driver_trips(
         db=db,
-        company_id=company_id,
+        current_user=current_user,
+        company_id=resolved_company_id,
         driver_id=driver_id,
     )
 
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return result["data"]
+    return _handle_service_result(result)
 
 
 @router.get(
-    "/{company_id}/status/{status_value}",
+    "/status/{trip_status}",
     response_model=list[TripListResponse],
-    status_code=status.HTTP_200_OK,
 )
-def get_trips_by_status_route(
-    company_id: UUID,
-    status_value: str,
+def get_trips_status_route(
+    trip_status: str,
+    company_id: UUID | None = Query(
+        default=None
+    ),
     db: Session = Depends(get_db),
+    current_user=Depends(
+        get_current_user
+    ),
 ):
+    resolved_company_id = _get_company_id(
+        current_user=current_user,
+        company_id=company_id,
+    )
+
     result = get_trips_by_status(
         db=db,
-        company_id=company_id,
-        status_value=status_value,
+        current_user=current_user,
+        company_id=resolved_company_id,
+        status_value=trip_status,
     )
 
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return result["data"]
+    return _handle_service_result(result)
 
 
 @router.get(
-    "/{company_id}/date-range",
+    "/date-range",
     response_model=list[TripListResponse],
-    status_code=status.HTTP_200_OK,
 )
-def get_trips_by_date_range_route(
-    company_id: UUID,
-    start_date: date,
-    end_date: date,
+def get_trips_date_range_route(
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    company_id: UUID | None = Query(
+        default=None
+    ),
     db: Session = Depends(get_db),
+    current_user=Depends(
+        get_current_user
+    ),
 ):
+    if start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date cannot be greater than end_date",
+        )
+
+    resolved_company_id = _get_company_id(
+        current_user=current_user,
+        company_id=company_id,
+    )
+
     result = get_trips_by_date_range(
         db=db,
-        company_id=company_id,
+        current_user=current_user,
+        company_id=resolved_company_id,
         start_date=start_date,
         end_date=end_date,
     )
 
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return result["data"]
+    return _handle_service_result(result)
 
 
 @router.get(
-    "/{company_id}/vehicle/{vehicle_id}/date-range",
-    response_model=list[TripListResponse],
-    status_code=status.HTTP_200_OK,
-)
-def get_vehicle_trips_by_date_range_route(
-    company_id: UUID,
-    vehicle_id: UUID,
-    start_date: date,
-    end_date: date,
-    db: Session = Depends(get_db),
-):
-    result = get_vehicle_trips_by_date_range(
-        db=db,
-        company_id=company_id,
-        vehicle_id=vehicle_id,
-        start_date=start_date,
-        end_date=end_date,
-    )
-
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return result["data"]
-
-
-@router.get(
-    "/{company_id}/driver/{driver_id}/date-range",
-    response_model=list[TripListResponse],
-    status_code=status.HTTP_200_OK,
-)
-def get_driver_trips_by_date_range_route(
-    company_id: UUID,
-    driver_id: UUID,
-    start_date: date,
-    end_date: date,
-    db: Session = Depends(get_db),
-):
-    result = get_driver_trips_by_date_range(
-        db=db,
-        company_id=company_id,
-        driver_id=driver_id,
-        start_date=start_date,
-        end_date=end_date,
-    )
-
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return result["data"]
-
-
-@router.get(
-    "/{company_id}/{trip_id}",
+    "/{trip_id}",
     response_model=TripResponse,
-    status_code=status.HTTP_200_OK,
 )
 def get_trip_route(
-    company_id: UUID,
     trip_id: UUID,
+    company_id: UUID | None = Query(
+        default=None
+    ),
     db: Session = Depends(get_db),
+    current_user=Depends(
+        get_current_user
+    ),
 ):
+    resolved_company_id = _get_company_id(
+        current_user=current_user,
+        company_id=company_id,
+    )
+
     result = get_trip(
         db=db,
-        company_id=company_id,
+        current_user=current_user,
+        company_id=resolved_company_id,
         trip_id=trip_id,
     )
 
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return result["data"]
+    return _handle_service_result(result)
 
 
 @router.put(
-    "/{company_id}/{trip_id}",
+    "/{trip_id}",
     response_model=TripResponse,
-    status_code=status.HTTP_200_OK,
+    dependencies=[
+        Depends(
+            require_roles(
+                *MANAGEMENT_ROLES
+            )
+        )
+    ],
 )
 def update_trip_route(
-    company_id: UUID,
     trip_id: UUID,
-    trip: TripUpdate,
+    trip_data: TripUpdate,
+    company_id: UUID | None = Query(
+        default=None
+    ),
     db: Session = Depends(get_db),
+    current_user=Depends(
+        get_current_user
+    ),
 ):
+    resolved_company_id = _get_company_id(
+        current_user=current_user,
+        company_id=company_id,
+    )
+
     result = update_trip(
         db=db,
-        company_id=company_id,
+        current_user=current_user,
+        company_id=resolved_company_id,
         trip_id=trip_id,
-        origin=trip.origin,
-        destination=trip.destination,
-        cargo_description=trip.cargo_description,
-        remarks=trip.remarks,
+        origin=trip_data.origin,
+        destination=trip_data.destination,
+        cargo_description=trip_data.cargo_description,
+        remarks=trip_data.remarks,
     )
 
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return result["data"]
+    return _handle_service_result(result)
 
 
 @router.patch(
-    "/{company_id}/{trip_id}/start",
+    "/{trip_id}/start",
     response_model=TripResponse,
-    status_code=status.HTTP_200_OK,
+    dependencies=[
+        Depends(
+            require_roles(
+                *OPERATIONAL_ROLES
+            )
+        )
+    ],
 )
 def start_trip_route(
-    company_id: UUID,
     trip_id: UUID,
+    company_id: UUID | None = Query(
+        default=None
+    ),
     db: Session = Depends(get_db),
+    current_user=Depends(
+        get_current_user
+    ),
 ):
+    resolved_company_id = _get_company_id(
+        current_user=current_user,
+        company_id=company_id,
+    )
+
     result = start_trip(
         db=db,
-        company_id=company_id,
+        current_user=current_user,
+        company_id=resolved_company_id,
         trip_id=trip_id,
     )
 
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return result["data"]
+    return _handle_service_result(result)
 
 
 @router.patch(
-    "/{company_id}/{trip_id}/complete",
+    "/{trip_id}/complete",
     response_model=TripResponse,
-    status_code=status.HTTP_200_OK,
+    dependencies=[
+        Depends(
+            require_roles(
+                *OPERATIONAL_ROLES
+            )
+        )
+    ],
 )
 def complete_trip_route(
-    company_id: UUID,
     trip_id: UUID,
+    company_id: UUID | None = Query(
+        default=None
+    ),
     db: Session = Depends(get_db),
+    current_user=Depends(
+        get_current_user
+    ),
 ):
+    resolved_company_id = _get_company_id(
+        current_user=current_user,
+        company_id=company_id,
+    )
+
     result = complete_trip(
         db=db,
-        company_id=company_id,
+        current_user=current_user,
+        company_id=resolved_company_id,
         trip_id=trip_id,
     )
 
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return result["data"]
+    return _handle_service_result(result)
 
 
 @router.patch(
-    "/{company_id}/{trip_id}/cancel",
+    "/{trip_id}/cancel",
     response_model=TripResponse,
-    status_code=status.HTTP_200_OK,
+    dependencies=[
+        Depends(
+            require_roles(
+                *OPERATIONAL_ROLES
+            )
+        )
+    ],
 )
 def cancel_trip_route(
-    company_id: UUID,
     trip_id: UUID,
+    company_id: UUID | None = Query(
+        default=None
+    ),
     db: Session = Depends(get_db),
+    current_user=Depends(
+        get_current_user
+    ),
 ):
+    resolved_company_id = _get_company_id(
+        current_user=current_user,
+        company_id=company_id,
+    )
+
     result = cancel_trip(
         db=db,
-        company_id=company_id,
+        current_user=current_user,
+        company_id=resolved_company_id,
         trip_id=trip_id,
     )
 
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return result["data"]
+    return _handle_service_result(result)
 
 
 @router.delete(
-    "/{company_id}/{trip_id}",
-    status_code=status.HTTP_200_OK,
+    "/{trip_id}",
+    response_model=TripResponse,
+    dependencies=[
+        Depends(
+            require_roles(
+                *MANAGEMENT_ROLES
+            )
+        )
+    ],
 )
 def delete_trip_route(
-    company_id: UUID,
     trip_id: UUID,
+    company_id: UUID | None = Query(
+        default=None
+    ),
     db: Session = Depends(get_db),
+    current_user=Depends(
+        get_current_user
+    ),
 ):
+    resolved_company_id = _get_company_id(
+        current_user=current_user,
+        company_id=company_id,
+    )
+
     result = delete_trip(
         db=db,
-        company_id=company_id,
+        current_user=current_user,
+        company_id=resolved_company_id,
         trip_id=trip_id,
     )
 
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"],
-        )
-
-    return {
-        "message": result["message"]
-    }
-
+    return _handle_service_result(result)

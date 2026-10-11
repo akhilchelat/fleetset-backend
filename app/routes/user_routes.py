@@ -1,31 +1,38 @@
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 
 from app.schemas.user_schema import (
-    UserCreate,
-    UserUpdate,
-    UserResponse,
     UserBulkAction,
     UserBulkActionResponse,
-)
-
-from app.services.user_service import (
-    create_user,
-    find_user_by_id,
-    find_user_by_email,
-    get_all_active_users,
-    get_all_users_admin,
-    update_user,
-    activate_user,
-    bulk_activate_users,
-    deactivate_user,
-    bulk_deactivate_users,
+    UserCreate,
+    UserResponse,
+    UserUpdate,
 )
 
 from app.security.authentication import hash_password
+from app.security.authorization import (
+    get_current_user,
+    require_roles,
+)
+
+from app.services.user_service import (
+    activate_user,
+    bulk_activate_users,
+    bulk_deactivate_users,
+    create_user,
+    deactivate_user,
+    find_user_by_email,
+    find_user_by_id,
+    get_all_active_users,
+    get_all_users_admin,
+    update_user,
+)
+
+from app.models.user import User
 
 
 router = APIRouter(
@@ -42,12 +49,23 @@ router = APIRouter(
 def create_user_route(
     user: UserCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            "GLOBAL_ADMIN",
+            "SUPER_ADMIN",
+            "BRANCH_ADMIN",
+        )
+    ),
 ):
-    hashed_password = hash_password(user.password)
+    hashed_password = hash_password(
+        user.password
+    )
 
     result = create_user(
         db=db,
+        current_user=current_user,
         company_id=user.company_id,
+        branch_id=user.branch_id,
         role_id=user.role_id,
         first_name=user.first_name,
         last_name=user.last_name,
@@ -72,8 +90,12 @@ def create_user_route(
 )
 def get_all_active_users_route(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    result = get_all_active_users(db=db)
+    result = get_all_active_users(
+        db=db,
+        current_user=current_user,
+    )
 
     if not result["success"]:
         raise HTTPException(
@@ -91,8 +113,14 @@ def get_all_active_users_route(
 )
 def get_all_users_admin_route(
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
-    result = get_all_users_admin(db=db)
+    result = get_all_users_admin(
+        db=db,
+        current_user=current_user,
+    )
 
     if not result["success"]:
         raise HTTPException(
@@ -111,9 +139,17 @@ def get_all_users_admin_route(
 def get_user_by_email_route(
     email: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            "GLOBAL_ADMIN",
+            "SUPER_ADMIN",
+            "BRANCH_ADMIN",
+        )
+    ),
 ):
     result = find_user_by_email(
         db=db,
+        current_user=current_user,
         email=email,
     )
 
@@ -134,9 +170,11 @@ def get_user_by_email_route(
 def get_user_by_id_route(
     user_id: UUID,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     result = find_user_by_id(
         db=db,
+        current_user=current_user,
         user_id=user_id,
     )
 
@@ -158,11 +196,14 @@ def update_user_route(
     user_id: UUID,
     user: UserUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     result = update_user(
         db=db,
+        current_user=current_user,
         user_id=user_id,
         company_id=user.company_id,
+        branch_id=user.branch_id,
         role_id=user.role_id,
         first_name=user.first_name,
         last_name=user.last_name,
@@ -187,9 +228,17 @@ def update_user_route(
 def activate_user_route(
     user_id: UUID,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            "GLOBAL_ADMIN",
+            "SUPER_ADMIN",
+            "BRANCH_ADMIN",
+        )
+    ),
 ):
     result = activate_user(
         db=db,
+        current_user=current_user,
         user_id=user_id,
     )
 
@@ -210,9 +259,17 @@ def activate_user_route(
 def deactivate_user_route(
     user_id: UUID,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            "GLOBAL_ADMIN",
+            "SUPER_ADMIN",
+            "BRANCH_ADMIN",
+        )
+    ),
 ):
     result = deactivate_user(
         db=db,
+        current_user=current_user,
         user_id=user_id,
     )
 
@@ -233,9 +290,17 @@ def deactivate_user_route(
 def bulk_activate_users_route(
     request: UserBulkAction,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            "GLOBAL_ADMIN",
+            "SUPER_ADMIN",
+            "BRANCH_ADMIN",
+        )
+    ),
 ):
     result = bulk_activate_users(
         db=db,
+        current_user=current_user,
         user_ids=request.user_ids,
     )
 
@@ -256,9 +321,17 @@ def bulk_activate_users_route(
 def bulk_deactivate_users_route(
     request: UserBulkAction,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            "GLOBAL_ADMIN",
+            "SUPER_ADMIN",
+            "BRANCH_ADMIN",
+        )
+    ),
 ):
     result = bulk_deactivate_users(
         db=db,
+        current_user=current_user,
         user_ids=request.user_ids,
     )
 
@@ -269,4 +342,3 @@ def bulk_deactivate_users_route(
         )
 
     return result["data"]
-

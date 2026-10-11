@@ -1,4 +1,3 @@
-
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
@@ -9,9 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class FuelLogCreate(BaseModel):
     vehicle_id: UUID
     driver_id: UUID | None = None
-    recorded_by: UUID
     fuel_date: date
-    fuel_cost: Decimal = Field(..., gt=0, decimal_places=2)
+    fuel_cost: Decimal = Field(
+        ...,
+        gt=0,
+        decimal_places=2,
+    )
 
     @field_validator("fuel_cost")
     @classmethod
@@ -26,7 +28,7 @@ class FuelLogUpdate(BaseModel):
     fuel_cost: Decimal | None = Field(
         default=None,
         gt=0,
-        decimal_places=2
+        decimal_places=2,
     )
 
     @field_validator("fuel_cost")
@@ -40,6 +42,7 @@ class FuelLogUpdate(BaseModel):
 class FuelLogResponse(BaseModel):
     id: UUID
     company_id: UUID
+    branch_id: UUID
     vehicle_id: UUID
     driver_id: UUID | None = None
     recorded_by: UUID
@@ -59,4 +62,3 @@ class FuelExpenseResponse(BaseModel):
 class DailyFuelExpenseResponse(BaseModel):
     expense_date: date
     total_cost: Decimal
-

@@ -16,6 +16,7 @@ class DriverVehicleAssignmentTransfer(BaseModel):
 class DriverVehicleAssignmentResponse(BaseModel):
     id: UUID
     company_id: UUID
+    branch_id: UUID
     driver_id: UUID
     vehicle_id: UUID
     assigned_by: UUID

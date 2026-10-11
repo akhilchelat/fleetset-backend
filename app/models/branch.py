@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, ForeignKey
+from sqlalchemy import Column, String, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -7,6 +7,14 @@ from app.models.base import BaseModel
 
 class Branch(BaseModel):
     __tablename__ = "branches"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id",
+            "name",
+            name="uq_branch_company_name",
+        ),
+    )
 
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False,)
     name = Column(String(255), nullable=False,)

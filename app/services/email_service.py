@@ -5,23 +5,15 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-
 load_dotenv()
 
-
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-
 SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", SMTP_USERNAME)
 SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "FleetSet")
-
-print("SMTP_USERNAME:", SMTP_USERNAME)
-print("SMTP_PASSWORD configured:", bool(SMTP_PASSWORD))
-print("SMTP_FROM_EMAIL:", SMTP_FROM_EMAIL)
-
 
 
 def send_report_email(
@@ -30,10 +22,6 @@ def send_report_email(
     subject: str,
     body: str,
 ):
-    """
-    Send a FleetSet report PDF through Gmail SMTP.
-    """
-
     if not SMTP_USERNAME:
         return {
             "success": False,
@@ -52,6 +40,12 @@ def send_report_email(
             "message": "SMTP_FROM_EMAIL is not configured",
         }
 
+    if not recipient_email:
+        return {
+            "success": False,
+            "message": "Recipient email is required",
+        }
+
     pdf_path = Path(pdf_path)
 
     if not pdf_path.exists():
@@ -63,9 +57,7 @@ def send_report_email(
     try:
         message = EmailMessage()
 
-        message["From"] = (
-            f"{SMTP_FROM_NAME} <{SMTP_FROM_EMAIL}>"
-        )
+        message["From"] = f"{SMTP_FROM_NAME} <{SMTP_FROM_EMAIL}>"
         message["To"] = recipient_email
         message["Subject"] = subject
 
@@ -81,12 +73,17 @@ def send_report_email(
             filename=pdf_path.name,
         )
 
-        with smtplib.SMTP_SSL(SMTP_HOST,
-                              SMTP_PORT,
-                              timeout=30,) as smtp:
-              smtp.login(SMTP_USERNAME, SMTP_PASSWORD,)
+        with smtplib.SMTP_SSL(
+            SMTP_HOST,
+            SMTP_PORT,
+            timeout=30,
+        ) as smtp:
+            smtp.login(
+                SMTP_USERNAME,
+                SMTP_PASSWORD,
+            )
 
-              smtp.send_message(message)
+            smtp.send_message(message)
 
         return {
             "success": True,
@@ -99,11 +96,14 @@ def send_report_email(
         if isinstance(smtp_error, bytes):
             smtp_error = smtp_error.decode(errors="ignore")
 
-            return {
-                "success": False,
-                "message": (f"Gmail authentication failed. "
-                            f"SMTP code: {exc.smtp_code}. "
-                            f"SMTP message: {smtp_error}"),}
+        return {
+            "success": False,
+            "message": (
+                "Gmail authentication failed. "
+                f"SMTP code: {exc.smtp_code}. "
+                f"SMTP message: {smtp_error}"
+            ),
+        }
 
     except smtplib.SMTPException as exc:
         return {
@@ -111,8 +111,98 @@ def send_report_email(
             "message": f"SMTP error: {str(exc)}",
         }
 
+    except OSError as exc:
+        return {
+            "success": False,
+            "message": f"Unable to access report PDF: {str(exc)}",
+        }
+
     except Exception as exc:
         return {
             "success": False,
             "message": f"Failed to send report email: {str(exc)}",
         }
+
+
+def send_password_reset_email(
+    recipient_email: str,
+    reset_url: str,
+):
+    if not SMTP_USERNAME or not SMTP_PASSWORD or not SMTP_FROM_EMAIL:
+        return {
+            "success": False,
+            "message": "SMTP email configuration is incomplete",
+        }
+
+    if not recipient_email or not reset_url:
+        return {
+            "success": False,
+            "message": "Recipient email and reset URL are required",
+        }
+
+    try:
+        message = EmailMessage()
+        message["From"] = f"{SMTP_FROM_NAME} <{SMTP_FROM_EMAIL}>"
+        message["To"] = recipient_email
+        message["Subject"] = "Reset your FleetSet password"
+
+        message.set_content(
+            "We received a request to reset your FleetSet password.\n\n"
+            f"Use this link to choose a new password:\n{reset_url}\n\n"
+            "This link expires after 30 minutes and can only be used once.\n"
+            "If you did not request a password reset, you can ignore this email."
+        )
+
+        with smtplib.SMTP_SSL(
+            SMTP_HOST,
+            SMTP_PORT,
+            timeout=30,
+        ) as smtp:
+            smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
+            smtp.send_message(message)
+
+        return {
+            "success": True,
+            "message": "Password reset email sent",
+        }
+
+    except Exception:
+        # Do not expose SMTP credentials or internal errors to API clients.
+        return {
+            "success": False,
+            "message": "Unable to send password reset email",
+        }
+
+
+def send_password_reset_email(
+    recipient_email: str,
+    reset_url: str,
+):
+    if not SMTP_USERNAME or not SMTP_PASSWORD or not SMTP_FROM_EMAIL:
+        return {"success": False, "message": "Email configuration incomplete"}
+
+    try:
+        message = EmailMessage()
+        message["From"] = f"{SMTP_FROM_NAME} <{SMTP_FROM_EMAIL}>"
+        message["To"] = recipient_email
+        message["Subject"] = "Reset your FleetSet password"
+
+        message.set_content(
+            "A request was made to reset your FleetSet password.\n\n"
+            f"Open this link in your FleetSet mobile app:\n{reset_url}\n\n"
+            "This link expires in 30 minutes and can only be used once.\n"
+            "If you did not request this, you can ignore this email."
+        )
+
+        with smtplib.SMTP_SSL(
+            SMTP_HOST, SMTP_PORT, timeout=30
+        ) as smtp:
+            smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
+            smtp.send_message(message)
+
+        return {"success": True, "message": "Email sent"}
+
+    except Exception:
+        # Keep internal SMTP details out of the API response.
+        return {"success": False, "message": "Email delivery failed"}    
+        

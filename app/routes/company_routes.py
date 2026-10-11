@@ -1,7 +1,10 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, status, HTTPException
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+
 from app.db.session import get_db
+
 from app.schemas.company_schema import (
     CompanyCreate,
     CompanyUpdate,
@@ -24,6 +27,10 @@ from app.services.company_service import (
     bulk_deactivate_companies,
 )
 
+from app.models.user import User
+
+from app.security.authorization import require_roles
+
 
 router = APIRouter(
     prefix="/companies",
@@ -39,9 +46,13 @@ router = APIRouter(
 def create_company_route(
     company: CompanyCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
     result = create_company(
         db=db,
+        current_user=current_user,
         name=company.name,
         email=company.email,
         phone=company.phone,
@@ -65,9 +76,13 @@ def create_company_route(
 )
 def get_all_companies_route(
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
     result = get_all_companies(
         db=db,
+        current_user=current_user,
     )
 
     if not result["success"]:
@@ -86,9 +101,13 @@ def get_all_companies_route(
 )
 def get_all_active_companies_route(
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
     result = get_all_active_companies(
         db=db,
+        current_user=current_user,
     )
 
     if not result["success"]:
@@ -108,10 +127,14 @@ def get_all_active_companies_route(
 def get_company_by_email_route(
     email: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
     result = find_company_by_email(
         db=db,
         email=email,
+        current_user=current_user,
     )
 
     if not result["success"]:
@@ -131,10 +154,14 @@ def get_company_by_email_route(
 def bulk_activate_companies_route(
     company_data: CompanyBulkAction,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
     result = bulk_activate_companies(
         db=db,
         company_ids=company_data.company_ids,
+        current_user=current_user,
     )
 
     if not result["success"]:
@@ -154,10 +181,14 @@ def bulk_activate_companies_route(
 def bulk_deactivate_companies_route(
     company_data: CompanyBulkAction,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
     result = bulk_deactivate_companies(
         db=db,
         company_ids=company_data.company_ids,
+        current_user=current_user,
     )
 
     if not result["success"]:
@@ -177,10 +208,18 @@ def bulk_deactivate_companies_route(
 def get_company_by_id_route(
     company_id: UUID,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            "GLOBAL_ADMIN",
+            "SUPER_ADMIN",
+            "BRANCH_ADMIN",
+        )
+    ),
 ):
     result = find_company_by_id(
         db=db,
         company_id=company_id,
+        current_user=current_user,
     )
 
     if not result["success"]:
@@ -189,7 +228,7 @@ def get_company_by_id_route(
             detail=result["message"],
         )
 
-    return result["data"] 
+    return result["data"]
 
 
 @router.put(
@@ -201,10 +240,17 @@ def update_company_route(
     company_id: UUID,
     company: CompanyUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            "GLOBAL_ADMIN",
+            "SUPER_ADMIN",
+        )
+    ),
 ):
     result = update_company(
         db=db,
         company_id=company_id,
+        current_user=current_user,
         name=company.name,
         email=company.email,
         phone=company.phone,
@@ -229,10 +275,14 @@ def update_company_route(
 def activate_company_route(
     company_id: UUID,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
     result = activate_company(
         db=db,
         company_id=company_id,
+        current_user=current_user,
     )
 
     if not result["success"]:
@@ -252,10 +302,14 @@ def activate_company_route(
 def deactivate_company_route(
     company_id: UUID,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
     result = deactivate_company(
         db=db,
         company_id=company_id,
+        current_user=current_user,
     )
 
     if not result["success"]:

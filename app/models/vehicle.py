@@ -40,4 +40,4 @@ class Vehicle(BaseModel):
     fuel_logs = relationship("FuelLog", back_populates="vehicle",)
     maintenance_records = relationship("MaintenanceRecord", back_populates="vehicle",)
     documents = relationship("VehicleDocument", back_populates="vehicle",)
-    telemetry = relationship("VehicleTelemetry", back_populates="vehicle",)
+    

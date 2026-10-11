@@ -1,9 +1,12 @@
 from datetime import date, datetime
 from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class VehicleCreate(BaseModel):
+    branch_id: UUID
+
     registration_number: str = Field(
         ...,
         min_length=1,
@@ -22,7 +25,7 @@ class VehicleCreate(BaseModel):
 
     vehicle_type: str | None = Field(
         default=None,
-        max_length=100
+        max_length=50
     )
 
     year: int | None = Field(
@@ -58,7 +61,7 @@ class VehicleUpdate(BaseModel):
 
     vehicle_type: str | None = Field(
         default=None,
-        max_length=100
+        max_length=50
     )
 
     year: int | None = Field(
@@ -74,10 +77,16 @@ class VehicleUpdate(BaseModel):
         max_length=50
     )
 
+    current_odometer: int | None = Field(
+        default=None,
+        ge=0,
+    )
+
 
 class VehicleResponse(BaseModel):
     id: UUID
     company_id: UUID
+    branch_id: UUID
 
     registration_number: str
 
@@ -104,6 +113,7 @@ class VehicleResponse(BaseModel):
 class VehicleListResponse(BaseModel):
     id: UUID
     company_id: UUID
+    branch_id: UUID
 
     registration_number: str
 
@@ -155,6 +165,3 @@ class VehicleBulkActionResponse(BaseModel):
     already_inactive_vehicles: list[VehicleBulkActionItem] = Field(
         default_factory=list
     )
-
-class VehicleBulkOperation(VehicleBulkAction):
-    pass

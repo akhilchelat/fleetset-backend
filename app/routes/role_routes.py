@@ -5,6 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 
+from app.models.user import User
+from app.security.authorization import require_roles
+
 from app.schemas.role_schema import (
     RoleResponse,
     RoleListResponse,
@@ -43,7 +46,10 @@ router = APIRouter(
     status_code=status.HTTP_200_OK
 )
 def get_all_roles_admin_route(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
     result = get_all_roles_admin(
         db=db
@@ -66,7 +72,11 @@ def get_all_roles_admin_route(
 )
 def bulk_activate_roles_route(
     role_data: RoleBulkAction,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
+    
 ):
     result = bulk_activate_roles(
         db=db,
@@ -90,7 +100,10 @@ def bulk_activate_roles_route(
 )
 def bulk_deactivate_roles_route(
     role_data: RoleBulkAction,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
     result = bulk_deactivate_roles(
         db=db,
@@ -114,7 +127,10 @@ def bulk_deactivate_roles_route(
 )
 def activate_role_route(
     role_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
     result = activate_role(
         db=db,
@@ -138,7 +154,10 @@ def activate_role_route(
 )
 def deactivate_role_route(
     role_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
     result = deactivate_role(
         db=db,
@@ -162,7 +181,10 @@ def deactivate_role_route(
 )
 def get_role_by_id_admin_route(
     role_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("GLOBAL_ADMIN")
+    ),
 ):
     result = find_role_by_id_admin(
         db=db,

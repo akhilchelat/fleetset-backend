@@ -15,7 +15,7 @@ from app.routes.vehicledocument_routes import router as vehicledocument_router
 from app.routes.fuel_log_route import router as fuel_log_router
 from app.routes.auth_route import router as auth_router
 from app.routes.report_routes import router as report_router
-
+from app.routes.branch_routes import router as branch_router
 
 app = FastAPI(
     title="FleetSet API",
@@ -55,3 +55,4 @@ app.include_router(vehicledocument_router)
 app.include_router(fuel_log_router)
 app.include_router(auth_router)
 app.include_router(report_router)
+app.include_router(branch_router)

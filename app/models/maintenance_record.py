@@ -1,11 +1,11 @@
 from sqlalchemy import (
-    Column,
-    String,
-    Integer,
-    Date,
-    Numeric,
-    ForeignKey,
     Boolean,
+    Column,
+    Date,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship

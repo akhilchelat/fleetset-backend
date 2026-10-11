@@ -1,13 +1,15 @@
-from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, ConfigDict
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
 
 class CompanyBase(BaseModel):
     name: str
     email: EmailStr
-    phone: str
-    address: str
-    gst_number: str
+    phone: str | None = None
+    address: str | None = None
+    gst_number: str | None = None
 
 
 class CompanyCreate(CompanyBase):
@@ -35,14 +37,17 @@ class CompanyListResponse(BaseModel):
     id: UUID
     name: str
     email: EmailStr
-    phone: str
+    phone: str | None = None
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class CompanyBulkAction(BaseModel):
-    company_ids: list[UUID]
+    company_ids: list[UUID] = Field(
+        ...,
+        min_length=1,
+    )
 
 
 class CompanyBulkActionItem(BaseModel):
@@ -51,7 +56,15 @@ class CompanyBulkActionItem(BaseModel):
 
 
 class CompanyBulkActionResponse(BaseModel):
-    activated_companies: list[CompanyBulkActionItem] = []
-    deactivated_companies: list[CompanyBulkActionItem] = []
-    already_active_companies: list[CompanyBulkActionItem] = []
-    already_inactive_companies: list[CompanyBulkActionItem] = []
+    activated_companies: list[CompanyBulkActionItem] = Field(
+        default_factory=list
+    )
+    deactivated_companies: list[CompanyBulkActionItem] = Field(
+        default_factory=list
+    )
+    already_active_companies: list[CompanyBulkActionItem] = Field(
+        default_factory=list
+    )
+    already_inactive_companies: list[CompanyBulkActionItem] = Field(
+        default_factory=list
+    )

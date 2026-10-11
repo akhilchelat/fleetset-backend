@@ -93,6 +93,12 @@ def require_roles(*allowed_roles: str):
                 detail="User role is inactive"
             )
 
+        print(
+    "AUTH DEBUG:",
+    "user_id=", current_user.id,
+    "role=", repr(current_user.role.name),
+    "allowed_roles=", allowed_roles,)
+
         if current_user.role.name not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

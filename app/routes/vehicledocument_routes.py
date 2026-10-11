@@ -1,7 +1,11 @@
+from datetime import date
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+
 from app.db.session import get_db
+
 from app.schemas.vehicledocument_schema import (
     VehicleDocumentCreate,
     VehicleDocumentUpdate,
@@ -9,6 +13,7 @@ from app.schemas.vehicledocument_schema import (
     VehicleDocumentResponse,
     VehicleDocumentBulkRequest,
 )
+
 from app.services.vehicledocument_service import (
     create_vehicle_document_service,
     update_vehicle_document_service,
@@ -21,65 +26,70 @@ from app.services.vehicledocument_service import (
     get_inactive_vehicle_documents_service,
     get_expiring_vehicle_documents_service,
     get_expired_vehicle_documents_service,
+    get_vehicle_documents_for_vehicle_service,
 )
+
+from app.security.authorization import get_current_user
 
 
 router = APIRouter(
     prefix="/vehicle-documents",
-    tags=["Vehicle Documents"]
+    tags=["Vehicle Documents"],
 )
 
 
 @router.post(
     "/{company_id}",
     response_model=VehicleDocumentResponse,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
 )
-def create_vehicle_document_route(
+def create_vehicle_document(
     company_id: UUID,
     document_data: VehicleDocumentCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     result = create_vehicle_document_service(
         db=db,
         company_id=company_id,
         vehicle_id=document_data.vehicle_id,
-        uploaded_by=document_data.uploaded_by,
+        current_user=current_user,
         document_type=document_data.document_type,
         document_number=document_data.document_number,
         issue_date=document_data.issue_date,
         expiry_date=document_data.expiry_date,
         file_url=document_data.file_url,
-        remarks=document_data.remarks
+        remarks=document_data.remarks,
     )
 
     if not result["success"]:
         raise HTTPException(
             status_code=result["status_code"],
-            detail=result["message"]
+            detail=result["message"],
         )
 
     return result["data"]
 
 
 @router.get(
-    "/{company_id}/active",
+    "/{company_id}/all",
     response_model=list[VehicleDocumentResponse],
-    status_code=status.HTTP_200_OK
 )
-def get_active_vehicle_documents_route(
+def get_all_active_vehicle_documents(
     company_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     result = get_active_vehicle_documents_service(
         db=db,
-        company_id=company_id
+        company_id=company_id,
+        current_user=current_user,
     )
 
     if not result["success"]:
         raise HTTPException(
             status_code=result["status_code"],
-            detail=result["message"]
+            detail=result["message"],
         )
 
     return result["data"]
@@ -88,69 +98,48 @@ def get_active_vehicle_documents_route(
 @router.get(
     "/{company_id}/inactive",
     response_model=list[VehicleDocumentResponse],
-    status_code=status.HTTP_200_OK
 )
-def get_inactive_vehicle_documents_route(
+def get_all_inactive_vehicle_documents(
     company_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     result = get_inactive_vehicle_documents_service(
         db=db,
-        company_id=company_id
+        company_id=company_id,
+        current_user=current_user,
     )
 
     if not result["success"]:
         raise HTTPException(
             status_code=result["status_code"],
-            detail=result["message"]
+            detail=result["message"],
         )
 
     return result["data"]
 
 
 @router.get(
-    "/{company_id}/expiring",
+    "/{company_id}/vehicle/{vehicle_id}",
     response_model=list[VehicleDocumentResponse],
-    status_code=status.HTTP_200_OK
 )
-def get_expiring_vehicle_documents_route(
+def get_vehicle_documents(
     company_id: UUID,
-    days: int = Query(default=30),
-    db: Session = Depends(get_db)
+    vehicle_id: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    result = get_expiring_vehicle_documents_service(
+    result = get_vehicle_documents_for_vehicle_service(
         db=db,
         company_id=company_id,
-        days=days
+        vehicle_id=vehicle_id,
+        current_user=current_user,
     )
 
     if not result["success"]:
         raise HTTPException(
             status_code=result["status_code"],
-            detail=result["message"]
-        )
-
-    return result["data"]
-
-
-@router.get(
-    "/{company_id}/expired",
-    response_model=list[VehicleDocumentResponse],
-    status_code=status.HTTP_200_OK
-)
-def get_expired_vehicle_documents_route(
-    company_id: UUID,
-    db: Session = Depends(get_db)
-):
-    result = get_expired_vehicle_documents_service(
-        db=db,
-        company_id=company_id
-    )
-
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"]
+            detail=result["message"],
         )
 
     return result["data"]
@@ -159,23 +148,74 @@ def get_expired_vehicle_documents_route(
 @router.get(
     "/{company_id}/type/{document_type}",
     response_model=list[VehicleDocumentResponse],
-    status_code=status.HTTP_200_OK
 )
-def get_company_documents_by_type_route(
+def get_documents_by_type(
     company_id: UUID,
     document_type: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     result = get_company_documents_by_type_service(
         db=db,
         company_id=company_id,
-        document_type=document_type
+        document_type=document_type,
+        current_user=current_user,
     )
 
     if not result["success"]:
         raise HTTPException(
             status_code=result["status_code"],
-            detail=result["message"]
+            detail=result["message"],
+        )
+
+    return result["data"]
+
+
+@router.get(
+    "/{company_id}/expiring",
+    response_model=list[VehicleDocumentResponse],
+)
+def get_expiring_documents(
+    company_id: UUID,
+    days: int = Query(default=30, ge=0),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = get_expiring_vehicle_documents_service(
+        db=db,
+        company_id=company_id,
+        current_user=current_user,
+        days=days,
+    )
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=result["status_code"],
+            detail=result["message"],
+        )
+
+    return result["data"]
+
+
+@router.get(
+    "/{company_id}/expired",
+    response_model=list[VehicleDocumentResponse],
+)
+def get_expired_documents(
+    company_id: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = get_expired_vehicle_documents_service(
+        db=db,
+        company_id=company_id,
+        current_user=current_user,
+    )
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=result["status_code"],
+            detail=result["message"],
         )
 
     return result["data"]
@@ -184,112 +224,24 @@ def get_company_documents_by_type_route(
 @router.post(
     "/{company_id}/bulk",
     response_model=list[VehicleDocumentResponse],
-    status_code=status.HTTP_200_OK
 )
-def get_vehicle_documents_route(
+def get_vehicle_documents_bulk(
     company_id: UUID,
-    document_data: VehicleDocumentBulkRequest,
-    db: Session = Depends(get_db)
+    request_data: VehicleDocumentBulkRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     result = get_vehicle_documents_service(
         db=db,
         company_id=company_id,
-        document_ids=document_data.document_ids
+        document_ids=request_data.document_ids,
+        current_user=current_user,
     )
 
     if not result["success"]:
         raise HTTPException(
             status_code=result["status_code"],
-            detail=result["message"]
-        )
-
-    return result["data"]
-
-
-@router.put(
-    "/{company_id}/{document_id}",
-    response_model=VehicleDocumentResponse,
-    status_code=status.HTTP_200_OK
-)
-def update_vehicle_document_route(
-    company_id: UUID,
-    document_id: UUID,
-    document_data: VehicleDocumentUpdate,
-    db: Session = Depends(get_db)
-):
-    result = update_vehicle_document_service(
-        db=db,
-        company_id=company_id,
-        document_id=document_id,
-        document_type=document_data.document_type,
-        document_number=document_data.document_number,
-        issue_date=document_data.issue_date,
-        expiry_date=document_data.expiry_date,
-        file_url=document_data.file_url,
-        remarks=document_data.remarks
-    )
-
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"]
-        )
-
-    return result["data"]
-
-
-@router.patch(
-    "/{company_id}/{document_id}/deactivate",
-    response_model=VehicleDocumentResponse,
-    status_code=status.HTTP_200_OK
-)
-def deactivate_vehicle_document_route(
-    company_id: UUID,
-    document_id: UUID,
-    db: Session = Depends(get_db)
-):
-    result = deactivate_vehicle_document_service(
-        db=db,
-        company_id=company_id,
-        document_id=document_id
-    )
-
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"]
-        )
-
-    return result["data"]
-
-
-@router.post(
-    "/{company_id}/{document_id}/renew",
-    response_model=VehicleDocumentResponse,
-    status_code=status.HTTP_201_CREATED
-)
-def renew_vehicle_document_route(
-    company_id: UUID,
-    document_id: UUID,
-    document_data: VehicleDocumentRenew,
-    db: Session = Depends(get_db)
-):
-    result = renew_vehicle_document_service(
-        db=db,
-        company_id=company_id,
-        document_id=document_id,
-        uploaded_by=document_data.uploaded_by,
-        document_number=document_data.document_number,
-        issue_date=document_data.issue_date,
-        expiry_date=document_data.expiry_date,
-        file_url=document_data.file_url,
-        remarks=document_data.remarks
-    )
-
-    if not result["success"]:
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=result["message"]
+            detail=result["message"],
         )
 
     return result["data"]
@@ -298,24 +250,118 @@ def renew_vehicle_document_route(
 @router.get(
     "/{company_id}/{document_id}",
     response_model=VehicleDocumentResponse,
-    status_code=status.HTTP_200_OK
 )
-def get_vehicle_document_route(
+def get_vehicle_document(
     company_id: UUID,
     document_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     result = get_vehicle_document_service(
         db=db,
         company_id=company_id,
-        document_id=document_id
+        document_id=document_id,
+        current_user=current_user,
     )
 
     if not result["success"]:
         raise HTTPException(
             status_code=result["status_code"],
-            detail=result["message"]
+            detail=result["message"],
         )
 
     return result["data"]
 
+
+@router.put(
+    "/{company_id}/{document_id}",
+    response_model=VehicleDocumentResponse,
+)
+def update_vehicle_document(
+    company_id: UUID,
+    document_id: UUID,
+    document_data: VehicleDocumentUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = update_vehicle_document_service(
+        db=db,
+        company_id=company_id,
+        document_id=document_id,
+        current_user=current_user,
+        document_type=document_data.document_type,
+        document_number=document_data.document_number,
+        issue_date=document_data.issue_date,
+        expiry_date=document_data.expiry_date,
+        file_url=document_data.file_url,
+        remarks=document_data.remarks,
+    )
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=result["status_code"],
+            detail=result["message"],
+        )
+
+    return result["data"]
+
+
+@router.delete(
+    "/{company_id}/{document_id}",
+    response_model=VehicleDocumentResponse,
+)
+def deactivate_vehicle_document(
+    company_id: UUID,
+    document_id: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = deactivate_vehicle_document_service(
+        db=db,
+        company_id=company_id,
+        document_id=document_id,
+        current_user=current_user,
+    )
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=result["status_code"],
+            detail=result["message"],
+        )
+
+    return result["data"]
+
+
+@router.post(
+    "/{company_id}/{document_id}/renew",
+    response_model=VehicleDocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def renew_vehicle_document(
+    company_id: UUID,
+    document_id: UUID,
+    document_data: VehicleDocumentRenew,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+
+    print("RENEW ROUTE HIT", flush=True)
+    result = renew_vehicle_document_service(
+        db=db,
+        company_id=company_id,
+        document_id=document_id,
+        current_user=current_user,
+        document_number=document_data.document_number,
+        issue_date=document_data.issue_date,
+        expiry_date=document_data.expiry_date,
+        file_url=document_data.file_url,
+        remarks=document_data.remarks,
+    )
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=result["status_code"],
+            detail=result["message"],
+        )
+
+    return result["data"]

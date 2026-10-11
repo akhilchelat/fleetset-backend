@@ -1,9 +1,9 @@
 from sqlalchemy import (
-    Column,
-    String,
-    Date,
     Boolean,
+    Column,
+    Date,
     ForeignKey,
+    String,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -36,7 +36,7 @@ class VehicleDocument(BaseModel):
     file_url = Column(String)
     remarks = Column(String)
     is_active = Column(Boolean, default=True, nullable=False,)
-
+    
     company = relationship("Company", back_populates="vehicle_documents",)
     branch = relationship("Branch", back_populates="vehicle_documents",)
     vehicle = relationship("Vehicle", back_populates="documents",)
