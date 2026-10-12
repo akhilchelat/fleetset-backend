@@ -1,11 +1,32 @@
+
+import os
+
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-DATABASE_URL = "postgresql://postgres:unbeatable%235@localhost:5432/fleet_set"
+# Loads local .env during development.
+# On Render, DATABASE_URL should be configured in Environment.
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is not configured. "
+        "Set it in your local .env or Render environment variables."
+    )
+
+# Normalize older PostgreSQL URL prefixes if needed.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgres://", "postgresql://", 1
+    )
 
 engine = create_engine(
     DATABASE_URL,
-    echo=True,
+    pool_pre_ping=True,
+    echo=False,
 )
 
 SessionLocal = sessionmaker(
@@ -21,4 +42,4 @@ def get_db():
     try:
         yield db
     finally:
-        db.close()
+        db.close() 
