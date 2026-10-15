@@ -1,43 +1,44 @@
-import os
-import smtplib
-from email.message import EmailMessage
-from pathlib import Path
 
+import os
+import json
+import base64
+import logging
+import urllib.request
+import urllib.error
+
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
 
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+logger = logging.getLogger(__name__)
 
-SMTP_USERNAME = os.getenv("SMTP_USERNAME")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", SMTP_USERNAME)
-SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "FleetSet")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+EMAIL_FROM = os.getenv(
+    "EMAIL_FROM",
+    "FleetSet <onboarding@resend.dev>",
+)
+
+RESEND_API_URL = "https://api.resend.com/emails"
+REQUEST_TIMEOUT = 30
 
 
-def send_report_email(
+def _send_email(
     recipient_email: str,
-    pdf_path: str | Path,
     subject: str,
     body: str,
+    attachment_path: str | Path | None = None,
 ):
-    if not SMTP_USERNAME:
+    if not RESEND_API_KEY:
         return {
             "success": False,
-            "message": "SMTP_USERNAME is not configured",
+            "message": "RESEND_API_KEY is not configured",
         }
 
-    if not SMTP_PASSWORD:
+    if not EMAIL_FROM:
         return {
             "success": False,
-            "message": "SMTP_PASSWORD is not configured",
-        }
-
-    if not SMTP_FROM_EMAIL:
-        return {
-            "success": False,
-            "message": "SMTP_FROM_EMAIL is not configured",
+            "message": "EMAIL_FROM is not configured",
         }
 
     if not recipient_email:
@@ -46,163 +47,151 @@ def send_report_email(
             "message": "Recipient email is required",
         }
 
-    pdf_path = Path(pdf_path)
+    payload = {
+        "from": EMAIL_FROM,
+        "to": [recipient_email],
+        "subject": subject,
+        "text": body,
+    }
 
-    if not pdf_path.exists():
+    if attachment_path is not None:
+        path = Path(attachment_path)
+
+        if not path.is_file():
+            return {
+                "success": False,
+                "message": "Report PDF file not found",
+            }
+
+        try:
+            pdf_data = path.read_bytes()
+        except OSError:
+            logger.exception("Unable to read report PDF")
+            return {
+                "success": False,
+                "message": "Unable to read the report PDF file",
+            }
+
+        payload["attachments"] = [
+            {
+                "filename": path.name,
+                "content": base64.b64encode(pdf_data).decode("ascii"),
+            }
+        ]
+
+    request = urllib.request.Request(
+        RESEND_API_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=REQUEST_TIMEOUT,
+        ) as response:
+            response_body = response.read().decode("utf-8")
+            result = json.loads(response_body)
+
+        return {
+            "success": True,
+            "message": "Email accepted by Resend",
+            "email_id": result.get("id"),
+        }
+
+    except urllib.error.HTTPError as exc:
+        try:
+            error_body = exc.read().decode(
+                "utf-8",
+                errors="replace",
+            )
+        except Exception:
+            error_body = ""
+
+        logger.error(
+            "Resend API error HTTP %s: %s",
+            exc.code,
+            error_body[:1000],
+        )
+
+        return {
+            "success": False,
+            "message": (
+                f"Resend rejected the email request (HTTP {exc.code}). "
+                "Check the backend logs and Resend configuration."
+            ),
+        }
+
+    except (urllib.error.URLError, TimeoutError, OSError):
+        logger.exception("Could not connect to Resend")
+        return {
+            "success": False,
+            "message": (
+                "Unable to connect to the email provider. "
+                "Please try again later."
+            ),
+        }
+
+    except (ValueError, TypeError):
+        logger.exception("Invalid response from Resend")
+        return {
+            "success": False,
+            "message": "Invalid response received from the email provider",
+        }
+
+    except Exception:
+        logger.exception("Unexpected email sending error")
+        return {
+            "success": False,
+            "message": "Unexpected error while sending email",
+        }
+
+
+def send_report_email(
+    recipient_email: str,
+    pdf_path: str | Path,
+    subject: str,
+    body: str,
+):
+    path = Path(pdf_path)
+
+    if not path.is_file():
         return {
             "success": False,
             "message": "Report PDF file not found",
         }
 
-    try:
-        message = EmailMessage()
-
-        message["From"] = f"{SMTP_FROM_NAME} <{SMTP_FROM_EMAIL}>"
-        message["To"] = recipient_email
-        message["Subject"] = subject
-
-        message.set_content(body)
-
-        with open(pdf_path, "rb") as pdf_file:
-            pdf_data = pdf_file.read()
-
-        message.add_attachment(
-            pdf_data,
-            maintype="application",
-            subtype="pdf",
-            filename=pdf_path.name,
-        )
-
-        with smtplib.SMTP_SSL(
-            SMTP_HOST,
-            SMTP_PORT,
-            timeout=30,
-        ) as smtp:
-            smtp.login(
-                SMTP_USERNAME,
-                SMTP_PASSWORD,
-            )
-
-            smtp.send_message(message)
-
-        return {
-            "success": True,
-            "message": "Report email sent successfully",
-        }
-
-    except smtplib.SMTPAuthenticationError as exc:
-        smtp_error = exc.smtp_error
-
-        if isinstance(smtp_error, bytes):
-            smtp_error = smtp_error.decode(errors="ignore")
-
-        return {
-            "success": False,
-            "message": (
-                "Gmail authentication failed. "
-                f"SMTP code: {exc.smtp_code}. "
-                f"SMTP message: {smtp_error}"
-            ),
-        }
-
-    except smtplib.SMTPException as exc:
-        return {
-            "success": False,
-            "message": f"SMTP error: {str(exc)}",
-        }
-
-    except OSError as exc:
-        return {
-            "success": False,
-            "message": f"Unable to access report PDF: {str(exc)}",
-        }
-
-    except Exception as exc:
-        return {
-            "success": False,
-            "message": f"Failed to send report email: {str(exc)}",
-        }
+    return _send_email(
+        recipient_email=recipient_email,
+        subject=subject,
+        body=body,
+        attachment_path=path,
+    )
 
 
 def send_password_reset_email(
     recipient_email: str,
     reset_url: str,
 ):
-    if not SMTP_USERNAME or not SMTP_PASSWORD or not SMTP_FROM_EMAIL:
+    if not reset_url:
         return {
             "success": False,
-            "message": "SMTP email configuration is incomplete",
+            "message": "Password reset URL is required",
         }
 
-    if not recipient_email or not reset_url:
-        return {
-            "success": False,
-            "message": "Recipient email and reset URL are required",
-        }
+    body = (
+        "A request was made to reset your FleetSet password.\n\n"
+        f"Open this link to reset your password:\n{reset_url}\n\n"
+        "This link expires in 30 minutes and can only be used once.\n"
+        "If you did not request this, you can ignore this email."
+    )
 
-    try:
-        message = EmailMessage()
-        message["From"] = f"{SMTP_FROM_NAME} <{SMTP_FROM_EMAIL}>"
-        message["To"] = recipient_email
-        message["Subject"] = "Reset your FleetSet password"
-
-        message.set_content(
-            "We received a request to reset your FleetSet password.\n\n"
-            f"Use this link to choose a new password:\n{reset_url}\n\n"
-            "This link expires after 30 minutes and can only be used once.\n"
-            "If you did not request a password reset, you can ignore this email."
-        )
-
-        with smtplib.SMTP_SSL(
-            SMTP_HOST,
-            SMTP_PORT,
-            timeout=30,
-        ) as smtp:
-            smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
-            smtp.send_message(message)
-
-        return {
-            "success": True,
-            "message": "Password reset email sent",
-        }
-
-    except Exception:
-        # Do not expose SMTP credentials or internal errors to API clients.
-        return {
-            "success": False,
-            "message": "Unable to send password reset email",
-        }
-
-
-def send_password_reset_email(
-    recipient_email: str,
-    reset_url: str,
-):
-    if not SMTP_USERNAME or not SMTP_PASSWORD or not SMTP_FROM_EMAIL:
-        return {"success": False, "message": "Email configuration incomplete"}
-
-    try:
-        message = EmailMessage()
-        message["From"] = f"{SMTP_FROM_NAME} <{SMTP_FROM_EMAIL}>"
-        message["To"] = recipient_email
-        message["Subject"] = "Reset your FleetSet password"
-
-        message.set_content(
-            "A request was made to reset your FleetSet password.\n\n"
-            f"Open this link in your FleetSet mobile app:\n{reset_url}\n\n"
-            "This link expires in 30 minutes and can only be used once.\n"
-            "If you did not request this, you can ignore this email."
-        )
-
-        with smtplib.SMTP_SSL(
-            SMTP_HOST, SMTP_PORT, timeout=30
-        ) as smtp:
-            smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
-            smtp.send_message(message)
-
-        return {"success": True, "message": "Email sent"}
-
-    except Exception:
-        # Keep internal SMTP details out of the API response.
-        return {"success": False, "message": "Email delivery failed"}    
-        
+    return _send_email(
+        recipient_email=recipient_email,
+        subject="Reset your FleetSet password",
+        body=body,
+    )
