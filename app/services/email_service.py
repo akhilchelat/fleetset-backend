@@ -1,10 +1,12 @@
 
 import os
-import smtplib
+import json
+import base64
 import logging
+import urllib.request
+import urllib.error
 
 from pathlib import Path
-from email.message import EmailMessage
 from email.utils import formataddr
 from dotenv import load_dotenv
 
@@ -13,25 +15,22 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-
 # ============================================================
-# SMTP CONFIGURATION
+# RESEND HTTPS API CONFIGURATION
 # ============================================================
 
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
-SMTP_EMAIL = os.getenv("SMTP_EMAIL")
-SMTP_APP_PASSWORD = os.getenv("SMTP_APP_PASSWORD")
+RESEND_API_URL = "https://api.resend.com/emails"
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+RESEND_FROM_EMAIL = os.getenv(
+    "RESEND_FROM_EMAIL",
+    "onboarding@resend.dev",
+)
 EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "FleetSet")
 
-
 logger.info(
-    "SMTP configuration status: host=%s, port=%s, "
-    "email_set=%s, app_password_set=%s",
-    SMTP_HOST,
-    SMTP_PORT,
-    bool(SMTP_EMAIL),
-    bool(SMTP_APP_PASSWORD),
+    "Resend configuration status: api_key_set=%s, sender_set=%s",
+    bool(RESEND_API_KEY),
+    bool(RESEND_FROM_EMAIL),
 )
 
 
@@ -45,43 +44,38 @@ def _send_email(
     body: str,
     attachment_path: str | Path | None = None,
 ):
-    # --------------------------------------------------------
-    # Validate configuration
-    # --------------------------------------------------------
-
-    if not SMTP_EMAIL or not SMTP_APP_PASSWORD:
-        logger.error(
-            "SMTP configuration is incomplete: "
-            "email_set=%s, app_password_set=%s",
-            bool(SMTP_EMAIL),
-            bool(SMTP_APP_PASSWORD),
-        )
-
+    if not RESEND_API_KEY:
+        logger.error("RESEND_API_KEY is not configured")
         return {
             "success": False,
-            "message": (
-                "SMTP_EMAIL or SMTP_APP_PASSWORD "
-                "is not configured"
-            ),
+            "message": "Email service is not configured.",
+        }
+
+    if not RESEND_FROM_EMAIL:
+        logger.error("RESEND_FROM_EMAIL is not configured")
+        return {
+            "success": False,
+            "message": "Email sender is not configured.",
         }
 
     if not recipient_email or not recipient_email.strip():
         return {
             "success": False,
-            "message": "Recipient email is required",
+            "message": "Recipient email is required.",
         }
 
+    recipient_email = recipient_email.strip()
+
     # --------------------------------------------------------
-    # Build email
+    # Build the Resend API payload
     # --------------------------------------------------------
 
-    message = EmailMessage()
-    message["From"] = formataddr(
-        (EMAIL_FROM_NAME, SMTP_EMAIL)
-    )
-    message["To"] = recipient_email.strip()
-    message["Subject"] = subject
-    message.set_content(body)
+    payload = {
+        "from": formataddr((EMAIL_FROM_NAME, RESEND_FROM_EMAIL)),
+        "to": [recipient_email],
+        "subject": subject,
+        "text": body,
+    }
 
     # --------------------------------------------------------
     # Attach PDF if provided
@@ -95,152 +89,144 @@ def _send_email(
                 "Email attachment does not exist: %s",
                 path.name,
             )
-
             return {
                 "success": False,
-                "message": "Report PDF file not found",
+                "message": "Report PDF file not found.",
             }
 
         try:
             pdf_data = path.read_bytes()
 
-            message.add_attachment(
-                pdf_data,
-                maintype="application",
-                subtype="pdf",
-                filename=path.name,
-            )
+            payload["attachments"] = [
+                {
+                    "filename": path.name,
+                    "content": base64.b64encode(
+                        pdf_data
+                    ).decode("ascii"),
+                }
+            ]
 
         except OSError:
-            logger.exception(
-                "Unable to read email attachment"
-            )
-
+            logger.exception("Unable to read email attachment")
             return {
                 "success": False,
-                "message": (
-                    "Unable to read the report PDF file"
-                ),
+                "message": "Unable to read the report PDF file.",
             }
 
     # --------------------------------------------------------
-    # Send email through SMTP
+    # Send through Resend HTTPS API
     # --------------------------------------------------------
+
+    request_body = json.dumps(payload).encode("utf-8")
+
+    request = urllib.request.Request(
+        RESEND_API_URL,
+        data=request_body,
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
 
     try:
         logger.info(
-            "Starting SMTP delivery: host=%s, port=%s, "
-            "recipient=%s, attachment=%s",
-            SMTP_HOST,
-            SMTP_PORT,
-            recipient_email.strip(),
+            "Sending email through Resend: recipient=%s, attachment=%s",
+            recipient_email,
             attachment_path is not None,
         )
 
-        with smtplib.SMTP_SSL(
-            SMTP_HOST,
-            SMTP_PORT,
+        with urllib.request.urlopen(
+            request,
             timeout=30,
-        ) as server:
+        ) as response:
+            response_body = response.read().decode("utf-8")
+            result = json.loads(response_body) if response_body else {}
 
-            logger.info(
-                "SMTP SSL connection established"
-            )
-
-            server.login(
-                SMTP_EMAIL,
-                SMTP_APP_PASSWORD,
-            )
-
-            logger.info(
-                "SMTP authentication succeeded"
-            )
-
-            server.send_message(message)
+        email_id = result.get("id")
 
         logger.info(
-            "Email delivered successfully to %s",
-            recipient_email.strip(),
+            "Resend accepted email: email_id=%s, recipient=%s",
+            email_id,
+            recipient_email,
         )
 
         return {
             "success": True,
-            "message": "Email sent successfully",
+            "message": "Email accepted for delivery.",
         }
 
-    # --------------------------------------------------------
-    # Authentication errors
-    # --------------------------------------------------------
+    except urllib.error.HTTPError as exc:
+        try:
+            error_body = exc.read().decode("utf-8")
+            error_data = json.loads(error_body)
+        except (ValueError, OSError):
+            error_data = {}
 
-    except smtplib.SMTPAuthenticationError:
-        logger.exception(
-            "Gmail SMTP authentication failed"
+        # Never log the API key or request authorization header.
+        logger.error(
+            "Resend API rejected email: status=%s, error=%s",
+            exc.code,
+            error_data.get("message", "Unknown API error"),
         )
+
+        if exc.code in (401, 403):
+            return {
+                "success": False,
+                "message": (
+                    "Email service authentication failed. "
+                    "Check the Resend API key and permissions."
+                ),
+            }
+
+        if exc.code == 422:
+            return {
+                "success": False,
+                "message": (
+                    "Resend rejected the sender or recipient. "
+                    "Check sender verification and recipient details."
+                ),
+            }
 
         return {
             "success": False,
             "message": (
-                "Gmail SMTP authentication failed. "
-                "Check the email and app password."
-            ),
-        }
-
-    # --------------------------------------------------------
-    # SMTP protocol errors
-    # --------------------------------------------------------
-
-    except smtplib.SMTPException as exc:
-        logger.exception(
-            "SMTP protocol error: type=%s error=%s",
-            type(exc).__name__,
-            str(exc),
-        )
-
-        return {
-            "success": False,
-            "message": (
-                "SMTP email delivery failed. "
+                f"Email provider returned HTTP {exc.code}. "
                 "Check the Render logs for details."
             ),
         }
 
-    # --------------------------------------------------------
-    # Connection, network and timeout errors
-    # --------------------------------------------------------
-
-    except (OSError, TimeoutError) as exc:
-        logger.exception(
-            "SMTP connection/network error: "
-            "type=%s error=%s",
-            type(exc).__name__,
-            str(exc),
+    except urllib.error.URLError as exc:
+        logger.error(
+            "Resend network error: %s",
+            str(exc.reason),
         )
-
         return {
             "success": False,
             "message": (
-                "Unable to connect to the SMTP server. "
-                "Check the Render logs for details."
+                "Unable to connect to the email provider. "
+                "Check the Render logs."
             ),
         }
 
-    # --------------------------------------------------------
-    # Unexpected errors
-    # --------------------------------------------------------
+    except TimeoutError:
+        logger.exception("Resend request timed out")
+        return {
+            "success": False,
+            "message": "Email provider request timed out.",
+        }
 
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         logger.exception(
-            "Unexpected email delivery error: "
-            "type=%s error=%s",
+            "Email delivery error: type=%s",
             type(exc).__name__,
-            str(exc),
         )
-
         return {
             "success": False,
             "message": (
-                "Unexpected error while sending email. "
-                "Check the Render logs for details."
+                "Unexpected email delivery error. "
+                "Check the Render logs."
             ),
         }
 
@@ -262,10 +248,9 @@ def send_report_email(
             "Report PDF does not exist: %s",
             path.name,
         )
-
         return {
             "success": False,
-            "message": "Report PDF file not found",
+            "message": "Report PDF file not found.",
         }
 
     return _send_email(
@@ -287,7 +272,7 @@ def send_password_reset_email(
     if not reset_url:
         return {
             "success": False,
-            "message": "Password reset URL is required",
+            "message": "Password reset URL is required.",
         }
 
     body = (
