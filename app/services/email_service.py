@@ -1,26 +1,22 @@
 
 import os
-import json
-import base64
+import smtplib
 import logging
-import urllib.request
-import urllib.error
 
 from pathlib import Path
+from email.message import EmailMessage
+from email.utils import formataddr
 from dotenv import load_dotenv
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-RESEND_API_KEY = os.getenv("RESEND_API_KEY")
-EMAIL_FROM = os.getenv(
-    "EMAIL_FROM",
-    "FleetSet <onboarding@resend.dev>",
-)
-
-RESEND_API_URL = "https://api.resend.com/emails"
-REQUEST_TIMEOUT = 30
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+SMTP_EMAIL = os.getenv("SMTP_EMAIL")
+SMTP_APP_PASSWORD = os.getenv("SMTP_APP_PASSWORD")
+EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "FleetSet")
 
 
 def _send_email(
@@ -29,16 +25,10 @@ def _send_email(
     body: str,
     attachment_path: str | Path | None = None,
 ):
-    if not RESEND_API_KEY:
+    if not SMTP_EMAIL or not SMTP_APP_PASSWORD:
         return {
             "success": False,
-            "message": "RESEND_API_KEY is not configured",
-        }
-
-    if not EMAIL_FROM:
-        return {
-            "success": False,
-            "message": "EMAIL_FROM is not configured",
+            "message": "SMTP_EMAIL or SMTP_APP_PASSWORD is not configured",
         }
 
     if not recipient_email:
@@ -47,12 +37,11 @@ def _send_email(
             "message": "Recipient email is required",
         }
 
-    payload = {
-        "from": EMAIL_FROM,
-        "to": [recipient_email],
-        "subject": subject,
-        "text": body,
-    }
+    message = EmailMessage()
+    message["From"] = formataddr((EMAIL_FROM_NAME, SMTP_EMAIL))
+    message["To"] = recipient_email
+    message["Subject"] = subject
+    message.set_content(body)
 
     if attachment_path is not None:
         path = Path(attachment_path)
@@ -72,75 +61,39 @@ def _send_email(
                 "message": "Unable to read the report PDF file",
             }
 
-        payload["attachments"] = [
-            {
-                "filename": path.name,
-                "content": base64.b64encode(pdf_data).decode("ascii"),
-            }
-        ]
-
-    request = urllib.request.Request(
-        RESEND_API_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {RESEND_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+        message.add_attachment(
+            pdf_data,
+            maintype="application",
+            subtype="pdf",
+            filename=path.name,
+        )
 
     try:
-        with urllib.request.urlopen(
-            request,
-            timeout=REQUEST_TIMEOUT,
-        ) as response:
-            response_body = response.read().decode("utf-8")
-            result = json.loads(response_body)
+        with smtplib.SMTP_SSL(
+            SMTP_HOST,
+            SMTP_PORT,
+            timeout=30,
+        ) as server:
+            server.login(SMTP_EMAIL, SMTP_APP_PASSWORD)
+            server.send_message(message)
 
         return {
             "success": True,
-            "message": "Email accepted by Resend",
-            "email_id": result.get("id"),
+            "message": "Email sent successfully",
         }
 
-    except urllib.error.HTTPError as exc:
-        try:
-            error_body = exc.read().decode(
-                "utf-8",
-                errors="replace",
-            )
-        except Exception:
-            error_body = ""
-
-        logger.error(
-            "Resend API error HTTP %s: %s",
-            exc.code,
-            error_body[:1000],
-        )
-
+    except smtplib.SMTPAuthenticationError:
+        logger.exception("Gmail SMTP authentication failed")
         return {
             "success": False,
-            "message": (
-                f"Resend rejected the email request (HTTP {exc.code}). "
-                "Check the backend logs and Resend configuration."
-            ),
+            "message": "Gmail SMTP authentication failed. Check the email and app password.",
         }
 
-    except (urllib.error.URLError, TimeoutError, OSError):
-        logger.exception("Could not connect to Resend")
+    except (smtplib.SMTPException, OSError, TimeoutError):
+        logger.exception("SMTP email delivery failed")
         return {
             "success": False,
-            "message": (
-                "Unable to connect to the email provider. "
-                "Please try again later."
-            ),
-        }
-
-    except (ValueError, TypeError):
-        logger.exception("Invalid response from Resend")
-        return {
-            "success": False,
-            "message": "Invalid response received from the email provider",
+            "message": "Unable to send email through SMTP. Check the SMTP configuration and network access.",
         }
 
     except Exception:
