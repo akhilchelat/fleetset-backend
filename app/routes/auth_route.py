@@ -246,5 +246,5 @@ def change_password(
 
     current_user.password_hash = hash_password(request.new_password)
     db.commit()
-
+ 
     return {"message": "Password changed successfully."}

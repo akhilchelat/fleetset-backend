@@ -1,3 +1,4 @@
+
 from app.db.session import SessionLocal
 from app.models.role import Role
 
@@ -6,10 +7,10 @@ def seed_roles():
     db = SessionLocal()
 
     roles = [
-        "Admin",
-        "Manager",
-        "HR",
-        "Employee",
+        "GLOBAL_ADMIN",
+        "SUPER_ADMIN",
+        "BRANCH_ADMIN",
+        "DRIVER",
     ]
 
     try:
@@ -38,6 +39,7 @@ def seed_roles():
     except Exception as e:
         db.rollback()
         print(f"\nError: {e}")
+        raise
 
     finally:
         db.close()
