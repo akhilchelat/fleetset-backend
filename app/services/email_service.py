@@ -157,26 +157,47 @@ def _send_email(
             "message": "Email accepted for delivery.",
         }
 
+    
     except urllib.error.HTTPError as exc:
+        error_body = ""
+
         try:
             error_body = exc.read().decode("utf-8")
-            error_data = json.loads(error_body)
+            error_data = json.loads(error_body) if error_body else {}
         except (ValueError, OSError):
             error_data = {}
 
-        # Never log the API key or request authorization header.
-        logger.error(
-            "Resend API rejected email: status=%s, error=%s",
-            exc.code,
-            error_data.get("message", "Unknown API error"),
+        # Log the provider's response, never the API key.
+        error_message = (
+            error_data.get("message")
+            or error_data.get("error")
+            or error_data.get("name")
+            or error_body[:1000]
+            or "No error details returned"
         )
 
-        if exc.code in (401, 403):
+        logger.error(
+            "Resend API rejected email: status=%s, response=%s",
+            exc.code,
+            str(error_message)[:1000],
+        )
+
+        if exc.code == 401:
             return {
                 "success": False,
                 "message": (
-                    "Email service authentication failed. "
-                    "Check the Resend API key and permissions."
+                    "Resend rejected the API key. "
+                    "Verify that the key is valid and active."
+                ),
+            }
+
+        if exc.code == 403:
+            return {
+                "success": False,
+                "message": (
+                    "Resend denied the email request (HTTP 403). "
+                    "Check API permissions and account restrictions. "
+                    "See the Render logs for details."
                 ),
             }
 
@@ -184,8 +205,8 @@ def _send_email(
             return {
                 "success": False,
                 "message": (
-                    "Resend rejected the sender or recipient. "
-                    "Check sender verification and recipient details."
+                    "Resend rejected the email request. "
+                    "Check the sender, recipient, and request details."
                 ),
             }
 
