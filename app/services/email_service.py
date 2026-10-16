@@ -123,10 +123,11 @@ def _send_email(
         RESEND_API_URL,
         data=request_body,
         headers={
-            "Authorization": f"Bearer {RESEND_API_KEY}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
+    "Authorization": f"Bearer {RESEND_API_KEY}",
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "User-Agent": "FleetSet-Backend/1.0",
+},
         method="POST",
     )
 
