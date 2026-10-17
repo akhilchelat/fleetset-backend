@@ -310,3 +310,29 @@ def send_password_reset_email(
         subject="Reset your FleetSet password",
         body=body,
     )
+
+
+
+def send_password_reset_otp(
+    recipient_email: str,
+    otp: str,
+):
+    if not otp or len(otp) != 6 or not otp.isdigit():
+        return {
+            "success": False,
+            "message": "A valid six-digit OTP is required.",
+        }
+
+    body = (
+        "We received a request to reset your FleetSet password.\n\n"
+        f"Your verification code is: {otp}\n\n"
+        "This code expires in 10 minutes and has limited attempts.\n"
+        "If you did not request this, you can ignore this email."
+    )
+
+    return _send_email(
+        recipient_email=recipient_email,
+        subject="Your FleetSet password reset code",
+        body=body,
+    )
+
